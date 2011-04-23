@@ -132,8 +132,7 @@ collect.all = function(functor) {
         functor
     }
     else {
-        functor = apply.functor(functor, collect.all, list(functor), do.call)
-        collect.end(functor)
+        collect.all(collect(functor))
     }
 }
 

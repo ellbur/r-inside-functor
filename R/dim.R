@@ -21,8 +21,26 @@ align = function(dim.seq, dim.axis) {
 	dim.seq
 }
 
-`[.dim` = function(dim, ...) {
-	fmap(each)(dim)
+along = function(x, dim.axis) {
+    as.dim(lapply(dim.axis, function(.) x), id.dim(dim.axis))
+}
+
+`%along%` = along
+
+fold.to.null = function(x) {
+    if (length(x) == 0) NULL
+    else x
+}
+
+`[.dim` = function(dim, x, ...) {
+    if (missing(x)) {
+        fmap(each)(dim)
+    }
+    else {
+        class(dim) = fold.to.null(setdiff(class(dim), 'dim'))
+        rest = append(list(dim, x), list(...))
+        do.call(`[`, rest)
+    }
 }
 
 `[.each` = function(functor, ...) {

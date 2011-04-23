@@ -158,3 +158,6 @@ they should be "brought in" to the ones that are, and if multiple arguments are
 inisde.functors, they should be made to agree with each other as much as
 possible, failing if they do not agree.
 
+<p>More will follow. Rather more complete code is up at <a
+href="https://github.com/ellbur/r-inside-functor">https://github.com/ellbur/r-inside-functor</a>.</p>
+

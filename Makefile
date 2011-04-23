@@ -15,12 +15,14 @@ RINSTALL = $(RCMD) INSTALL
 RCHECK   = $(RCMD) check
 MV = mv
 RM = rm
+MKDIR = mkdir -p
 
 all: $(PKG)
 
 $(PKG): $(RSOURCE)
 	$(ROXYGEN) -d .
 	$(RBUILD) .
+	$(MKDIR) $(BUILD_DIR)
 	$(MV) $(PKG_FILE) $(PKG)
 
 check: $(RSOURCE)

@@ -1,0 +1,28 @@
+
+1) Quick version
+
+1.1) Building
+
+make
+
+1.2) Installing
+
+sudo make install
+
+2) Detailed version
+
+2.1) Building
+
+Roxygen (http://roxygen.org/) is used to build the documentation. The
+makefile runs
+$ R CMD roxygen -d .
+to build the documentation. This writes files into ./inst/, ./man/,
+./DESCRIPTION/ and possible others I have forgotten.
+
+After Roxygen is run, the directory should contain a valid R package,
+which may be built using
+$ R CMD build .
+which is what the makefile does. This will produce a .tar.gz file in the
+./build/ directory, which can be installed using
+$ R CMD INSTALL build/insidefunctor_0.1.tar.gz
+

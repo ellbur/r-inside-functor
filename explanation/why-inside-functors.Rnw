@@ -1,0 +1,160 @@
+
+<<print=F,echo=F>>=
+options(R2HTML.formatter=HTMLFormatHighlight)
+@
+
+<<results=html,echo=F>>=
+HTMLGetCSS()
+@
+
+<<results=html,echo=F>>=
+HTMLGetHighlightCSS()
+@
+
+<style type="text/css">
+.command {
+	font-family: monospace;
+	color: rgb(200,200,200);
+}
+.functioncall {
+	color: rgb(20,100,100);
+}
+.hr {
+	visibility: hidden;
+}
+</style>
+
+<p>This really starts with a grammatical detail. Sentences like</p>
+<<eval=F>>=
+sapply(ns, function(n) {
+	sum(1:n)
+})
+@
+
+<p>translate into English "Take the list of, for every element in
+<code>ns</code> the sum of 1 to n." This is fine for coding but that's not at
+all how you'd actually talk.</p>
+
+<p>What if the code were written like</p>
+<<eval=F>>=
+sum(1:each(ns))
+@
+
+<p>Which sounds like "Take the sum from 1 to each of the ns", which I think
+sounds more natural. The question is now: how can we make that code run?</p>
+
+<p>Let's make things easier for a moment and consider just functions of 1 variable.
+Clearly we are going to have to change what is meant by "calling" a function. So
+forget nice syntax for a moment and define</p>
+<<>>=
+apply.check.functor = function(func, arg) {
+    if (is.inside.functor(arg)) {
+        apply.functor(arg, func, arg)
+    }
+    else {
+        func(arg)
+    }
+}
+@
+
+<p>Here we assume <code>apply.functor</code> is a method that individual functor
+classes will define.</p>
+
+<p>Then we can define <code>each</code> like</p>
+
+<<>>=
+each = function(arg) {
+    inside = list(
+        items = arg
+    )
+    class(inside) = 'each'
+    inside
+}
+
+apply.functor.each = function(inside, func, arg) {
+    each(
+		lapply(inside$items, function(x) {
+			apply.check.functor(func, x)
+		})
+    )
+}
+
+is.inside.functor.each = function(inside) {
+	T
+}
+@
+
+<p>And you can see this is working exactly like <code>fmap</code> from say
+Haskell.</p>
+
+<p>Then add those methods we needed,</p>
+<<>>=
+is.inside.functor = function(...) {
+    UseMethod('is.inside.functor')
+}
+
+is.inside.functor.default = function(...) {
+    F
+}
+
+apply.functor = function(...) {
+    UseMethod('apply.functor')
+}
+@
+
+<p>And test:</p>
+
+<<>>=
+x = c(1, 2, 3)
+x
+
+y = apply.check.functor(sin, each(x))$items
+y
+@
+
+<p>And they can be nested:</p>
+
+<<>>=
+z = apply.check.functor(round, apply.check.functor(sin, each(x)))$items
+z
+@ 
+
+<p>And now to make the syntax nicer. Rather than calling
+<code>apply.check.functor</code> each time, the function being called can do
+that itself:</p>
+
+<<>>=
+fmap = function(func) {
+	params = formals(args(func))
+	new.func = function() {
+		.args = as.list(environment())
+		apply.check.functor(func, .args[[1]])
+	}
+	formals(new.func) = params
+	new.func
+}
+
+sin. = fmap(sin)
+
+y = sin.(each(x))$items
+y
+@
+
+<p>(This version of <code>fmap</code> has several technical problems which I'll
+point out later).</p>
+
+<p>Questions that arise at this point are:</p>
+<ul>
+<li>When functions take multiple arguments, and only some of them
+are <code>inside.functors</code>, how should that be handled?</li>
+<li>What if there are multiple inconsistent <code>inside.functors</code>?</li>
+</ul> 
+
+</p>If you really want to imitate English (which I do), it is only inevitable
+that <code>each(x) + 1</code> should add 1 to each x, and <code>each(x) +
+each(y)</code> should "line up" the corresponding <code>x</code>s and
+<code>y</code>s. That is, if some arguments are <em>not</em> inside.functors,
+they should be "brought in" to the ones that are, and if multiple arguments are
+inisde.functors, they should be made to agree with each other as much as
+possible, failing if they do not agree.
+

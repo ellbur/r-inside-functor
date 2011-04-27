@@ -4,10 +4,6 @@ options(R2HTML.formatter=HTMLFormatHighlight)
 @
 
 <<results=html,echo=F>>=
-HTMLGetCSS()
-@
-
-<<results=html,echo=F>>=
 HTMLGetHighlightCSS()
 @
 
@@ -15,6 +11,11 @@ HTMLGetHighlightCSS()
 .command {
 	font-family: monospace;
 	color: rgb(200,200,200);
+	white-space: pre;
+}
+p.commandline {
+	margin-top: 0px;
+	margin-bottom: 0px;
 }
 .functioncall {
 	color: rgb(20,100,100);
@@ -23,6 +24,9 @@ HTMLGetHighlightCSS()
 	visibility: hidden;
 }
 </style>
+
+<p>By "inside" I mean inside the parentheses, unlike normal functors which are
+written outside the parentheses.</p>
 
 <p>This really starts with a grammatical detail. Sentences like</p>
 <<eval=F>>=
@@ -41,7 +45,7 @@ sum(1:each(ns))
 @
 
 <p>Which sounds like "Take the sum from 1 to each of the ns", which I think
-sounds more natural. The question is now: how can we make that code run?</p>
+sounds more natural. The challenge: make that code run.</p>
 
 <p>Let's make things easier for a moment and consider just functions of 1 variable.
 Clearly we are going to have to change what is meant by "calling" a function. So
@@ -105,10 +109,14 @@ apply.functor = function(...) {
 <p>And test:</p>
 
 <<>>=
+sum.until = function(n) {
+	sum(1:n)
+}
+
 x = c(1, 2, 3)
 x
 
-y = apply.check.functor(sin, each(x))$items
+y = apply.check.functor(sum.until, each(x))$items
 y
 @
 
@@ -134,30 +142,46 @@ fmap = function(func) {
 	new.func
 }
 
-sin. = fmap(sin)
+sum.until. = fmap(sum.until)
 
-y = sin.(each(x))$items
+y = sum.until.(each(x))$items
 y
 @
 
 <p>(This version of <code>fmap</code> has several technical problems which I'll
 point out later).</p>
 
-<p>Questions that arise at this point are:</p>
-<ul>
-<li>When functions take multiple arguments, and only some of them
-are <code>inside.functors</code>, how should that be handled?</li>
-<li>What if there are multiple inconsistent <code>inside.functors</code>?</li>
-</ul> 
+<p>BUT our original example had a function of 2 arguments. If we're going to start
+handling multiple arguments, we have to answer a few questions:</p>
+<ol>
+<li>What do we do if some arguments are <code>inside.functor</code>s and others are not?</li>
+<li>How do we handle multiple disagreeing <code>inside.functor</code>s?</li>
+</ol> 
 
-</p>If you really want to imitate English (which I do), it is only inevitable
-that <code>each(x) + 1</code> should add 1 to each x, and <code>each(x) +
-each(y)</code> should "line up" the corresponding <code>x</code>s and
-<code>y</code>s. That is, if some arguments are <em>not</em> inside.functors,
-they should be "brought in" to the ones that are, and if multiple arguments are
-inisde.functors, they should be made to agree with each other as much as
-possible, failing if they do not agree.
+<p>Take the first one. If you really want to imitate English (which I do), it's only
+inevitable that</p>
 
-<p>More will follow. Rather more complete code is up at <a
-href="https://github.com/ellbur/r-inside-functor">https://github.com/ellbur/r-inside-functor</a>.</p>
+<<eval=F>>=
+each(x) + 1
+@
+
+<p>should add 1 to each x. So the argument <code>1</code> should be "brought in" to the
+functor.</p>
+
+<p>For the second question, take the example</p>
+
+<<eval=F>>=
+each(x) + each(y)
+@
+
+<p>where clearly the intent is to "line up" the corresponding elements of x and y.
+Actually, to closer follow English you would say</p>
+
+<<eval=F>>=
+each(x) + corresponding(y)
+@
+
+<p>Which might be preferable because it is less ambiguous.</p>
+
+<p>More will follow.</p>
 

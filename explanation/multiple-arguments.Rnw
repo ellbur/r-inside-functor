@@ -1,0 +1,306 @@
+
+<<print=F,echo=F>>=
+options(R2HTML.formatter=HTMLFormatHighlight)
+@
+
+<<results=html,echo=F>>=
+HTMLGetHighlightCSS()
+@
+
+<style type="text/css">
+.command {
+	font-family: monospace;
+	color: rgb(200,200,200);
+	white-space: pre;
+}
+p.commandline {
+	margin-top: 0px;
+	margin-bottom: 0px;
+}
+.functioncall {
+	color: rgb(20,100,100);
+}
+.hr {
+	visibility: hidden;
+}
+.note {
+    color: rgb(150,150,150);
+}
+</style>
+
+<p class="note">(The examples here work with the version of <a
+href="https://github.com/ellbur/r-inside-functor">insidefunctor</a> tagged as
+"v1")</p>
+
+<p>Say we want to support something like</p>
+
+<<eval=F>>=
+each(x) + each(y)
+@
+
+<p>If we're going to call a function on multiple arguments, each one of which
+might specify some new behavior, we have to resolve the conflict somehow.  For
+a start, let's say we give each argument a "level" and call one of them the
+"winner".</p>
+<<>>=
+apply.check.functor = function(func, args) {
+	if (length(args) == 0) {
+		return(func())
+	}
+	
+	functor.levels = lapply(args, function(x) {
+		if (is.inside.functor(x)) {
+			level(x)
+		}
+		else {
+			0
+		}
+	})
+	
+	winner.i = which.max(functor.levels)
+	winner.arg = args[[winner.i]]
+	
+	if (! is.inside.functor(winner.arg)) {
+		do.call(func, args)
+	}
+	else {
+		apply.functor(winner.arg, func, args)
+	}
+}
+@
+
+<p>This means we must also modify <code>fmap</code> to pass on
+multiple arguments:</p>
+<<>>=
+fmap = function(func) {
+	params = formals(args(func))
+	new.func = function() {
+		.args = as.list(environment())
+		apply.check.functor(func, .args)
+	}
+	formals(new.func) = params
+	new.func
+}
+@
+
+<p>And now <code>apply.functor.each</code> is going to have to do
+the work of reconciling the possibly competing messages:</p>
+<<>>=
+apply.functor.each = function(inside, func, args, caller) {
+	our.level  = level(inside)
+	
+	args.boxed = args
+	for (i in seq_along(args.boxed)) {
+		arg = args.boxed[[i]]
+		
+		if (is.inside.functor(arg) && level(arg)>=our.level) {
+			if (length(inside$items) != length(arg$items)) {
+				stop('Axis mismatch: ', inside, ' and ', arg)
+			}
+		}
+		else {
+			args.boxed[[i]] = insert.each(inside, arg)
+		}
+	}
+	
+	items = list()
+	
+	for (i in seq_along(inside$items)) {
+		piece.args = lapply(args.boxed, function (arg) {
+			arg$items[[i]]
+		})
+		res = apply.check.functor(func, piece.args)
+		items[[i]] = res
+	}
+	
+	each(items)
+}
+@
+
+<p>This <code>insert.each</code> is new: it pulls an argument into the
+functor by broadcasting it along the axis being iterated over:</p>
+<<>>=
+insert.each = function(inside, obj) {
+	each(lapply(inside$items, function(.) obj))
+}
+@
+
+<p>We need to define that <code>level</code> method. For now just make all
+levels 1 until we think of a good reason to make them otherwise.</p>
+<<>>=
+level = function(...) {
+	UseMethod('level')
+}
+
+level.each = function(...) {
+	1
+}
+@
+
+<p>Then retrieve those functions from the last post:</p>
+<<>>=
+is.inside.functor = function(...) {
+    UseMethod('is.inside.functor')
+}
+
+is.inside.functor.default = function(...) {
+    F
+}
+
+is.inside.functor.each = function(inside) {
+	T
+}
+
+apply.functor = function(...) {
+    UseMethod('apply.functor')
+}
+
+each = function(arg) {
+    inside = list(
+        items = arg
+    )
+    class(inside) = 'each'
+    inside
+}
+@
+
+<p>And see if this gives something reasonable:</p>
+<<>>=
+x = list(1, 2, 3)
+y = list(4, 5, 6)
+
+`%+%` = fmap(`+`)
+
+each(x) %+% each(y)
+each(x) %+% 1
+@
+
+<p>Now we can almost run that code from the beginning, fmap still has a
+problem:</p>
+<<>>=
+`%:%` = fmap(`:`)
+print(`%:%`)
+@
+
+</p>The problem is <code>`:`</code> does not have any formal parameters.
+<code>seq</code> will fail too because it's parameters are '...'. These can be
+solved, but for now define new functions</p>
+
+<<>>=
+seq. = fmap(
+	function(a, b) {
+		seq(a, b)
+	}
+)
+sum. = fmap(
+	function(x) {
+		sum(x)
+	}
+)
+
+sum.(seq.(1, each(x)))
+@
+
+<p>This opens up a real opportunity. Languages like R and Matlab already
+support something very similar to <code>each()</code>: for numeric vectors, x +
+y means add up the corresponding elements. And "corresponding" means having the
+same sequential position.</p>
+
+<p>But just because two vectors have the same length does not mean they
+correspond.  And normally R will not check that for you. But using inside
+functors we can check.</p>
+
+<p>Since the above functions are still rather incomplete and this is getting to
+be a lot of code sitting around in one place, for what follows I am going to
+use the package <code>insidefunctor</code> from <a
+href="https://github.com/ellbur/r-inside-functor">https://github.com/ellbur/r-inside-functor</a>.
+So let's load the package:</p> 
+
+<<>>=
+rm(list=ls())
+library(insidefunctor)
+@
+
+<p>In the <code>insidefunctor</code> package, <code>each</code> is slightly more
+generalized. Anything can be <code>each</code>ed if it supports the methods</p>
+<ul>
+<li><code>unpack(object)</code>
+<li><code>pack(object, items)</code>
+<li><code>make.axis(object)</code>
+</ul>
+
+<p>The package already defines these functions for vectors and lists. Let's make
+a new kind of object that remembers the dimension it runs along.</p> 
+
+<<>>=
+as.dimension = function(items) {
+	dimension = list(
+		items = items,
+		id = next.dimension.id()
+	)
+	class(dimension) = 'dimension'
+	dimension
+}
+
+unpack.dimension = function(dimension) {
+	dimension$items
+}
+
+pack.dimension = function(dimension, items) {
+	dimension$items = items
+	dimension
+}
+
+make.axis.dimension = function(dimension) {
+	seq = seq_along(dimension$items)
+	attr(seq, 'id') = dimension$id
+	seq
+}
+
+dimension.id.counter = 0
+next.dimension.id = function() {
+	dimension.id.counter <<- dimension.id.counter + 1
+	dimension.id.counter
+}
+@
+
+<p>Setting the <code>'id'</code> attribute of the returned axis ensures that
+<code>each</code> will not let you line up two dimensions whose ids differ.</p>
+
+<p>Let's check that code:</p>
+
+<<>>=
+x = as.dimension(c(1, 2, 3))
+y = as.dimension(c(4, 5, 6))
+
+`%+.%` = fmap(`+`)
+sq. = fmap(function(z) z**2)
+
+try(collect(each(x) %+.% each(x)), silent=T)
+try(collect(each(x) %+.% sq.(each(x))), silent=T)
+try(collect(each(x) %+.% each(y)), silent=T)
+geterrmessage()
+@
+
+<p>Excellent. We can add <code>x</code> to itself or something calculated from
+itself, but we can't add <code>x</code> to <code>y</code> because we haven't
+told <code>each</code> that those variables lie along the same axis -- maybe
+they don't.</p>
+
+<p>If we want them to correspond, we can say so explicitly.</p>
+
+<<>>=
+align = function(dim1, dim2) {
+	if (length(dim1$items) != length(dim2$items)) {
+		stop('Cannot align; lengths differ')
+	}
+	dim1$id = dim2$id
+	dim1
+}
+
+y = align(y, x)
+try(collect(each(x) %+.% each(y)))
+@
+
+<p>Now at least it can't happen by accident.</p>
+

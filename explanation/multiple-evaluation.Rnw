@@ -1,0 +1,295 @@
+
+<<print=F,echo=F>>=
+options(R2HTML.formatter=HTMLFormatHighlight)
+options(keep.source=T)
+@
+
+<<results=html,echo=F>>=
+HTMLGetHighlightCSS()
+@
+
+<style type="text/css">
+.command {
+	font-family: monospace;
+	color: rgb(200,200,200);
+	white-space: pre;
+}
+p.commandline {
+	margin-top: 0px;
+	margin-bottom: 0px;
+}
+.functioncall {
+	color: rgb(20,100,100);
+}
+.hr {
+	visibility: hidden;
+}
+.note {
+    color: rgb(150,150,150);
+}
+</style>
+
+<p class="note">(The examples here work with the version of <a
+href="https://github.com/ellbur/r-inside-functor">insidefunctor</a> tagged as
+"v1")</p>
+
+<p>I ran into an interesting problem using <a
+href="http://strugglingthroughproblems.blogspot.com/2011/04/inside-functors.html">"inside"
+functors.</a></p>
+
+<p>Something is wrong in the following code (well, depending on what you
+thought it should do).</p>
+
+<<fig=T,align=left>>=
+library(insidefunctor)
+
+`%+.%` = fmap(`+`)
+
+x = seq(0, 10, len=50)
+plot(x, collect(each(x) %+.% runif(1)))
+@
+
+<p>It's clear that in constructions like <code>each(x) + y</code>, y is only
+going to be evaluated once. Of course, the preceding example could have been
+written</p>
+
+<<fig=T,align=left>>=
+plot(x, collect(each(x) %+.% each(runif(length(x)))))
+@
+
+<p>but I think that that is not as grammatically pretty.</p>
+
+<p>But, since we solved the last grammatical problem with a hacky use of
+inside-functors, why not try the same trick? Say we define an inside functor
+<code>meval</code> (for multiple-evaluations) that behaves like this:</p>
+
+<ul>
+<li><code>meval(expr)</code> returns a promise to evaluate <code>expr</code></li>
+<li><code>func(meval(expr))</code> returns a promise to evaluate <code>func(expr)</code></li>
+<li><code>collect(meval(expr))</code> evaluates it finally.</li>
+</ul>
+
+<p>That is, the unevaluated chain keeps growing until it is finally collected,
+at which point a value results.</p>
+
+<p>So let's define that.</p>
+
+<<keep.source=T>>=
+meval = function(expr, level=1) {
+    expr = substitute(expr)
+    callback = function () {
+        eval(expr)
+    }
+    make.meval(callback, level=level, depth=1)
+}
+
+make.meval = function(callback, level, depth) {
+    functor = inside.functor(level, depth)
+    functor$callback = callback
+
+    class(functor) = c('meval', class(functor))
+
+    functor
+}
+
+apply.functor.meval = function(
+    inside,
+    func,
+    args,
+    caller
+)
+{
+    our.level = level(inside)
+
+    args.boxed = args
+    for (i in seq_along(args.boxed)) {
+        arg = args.boxed[[i]]
+
+        if (is.inside.functor(arg) && level(arg)>=our.level) {
+        }
+        else {
+            args.boxed[[i]] = list(
+                callback = function() {
+                    arg
+                }
+            )
+        }
+    }
+    max.depth = max(sapply(args.boxed, depth))
+
+    callback = function() {
+        piece.args = lapply(args.boxed, function (arg) {
+            arg$callback()
+        })
+        caller(func, piece.args)
+    }
+
+    make.meval(
+        callback,
+        level = our.level,
+        depth = max.depth
+    )
+}
+
+collect.end.meval = function(inside) {
+    inside$callback()
+}
+@
+
+<p>And test it.</p>
+
+<<>>=
+promise = meval(runif(1))
+collect(promise)
+collect(promise)
+@
+
+<p>Works so far. Now try the motivating example:</p>
+
+<<fig=T>>=
+plot(x, collect.all(each(x,l=2) %+.% meval(runif(1))))
+@
+
+<p><em>Oh god no it's <a
+href="http://strugglingthroughproblems.wordpress.com/?p=149&preview=true">this
+problem</a> again.</em></p>
+
+<p><code>arg</code> isn't being remembered in</p>
+
+<<eval=F,keep.source=T>>=
+args.boxed[[i]] = list(
+    callback = function() {
+        arg
+    }
+)
+@
+
+<p>so the fix is to</p>
+
+<<keep.source=T>>=
+apply.functor.meval = function(
+    inside,
+    func,
+    args,
+    caller
+)
+{
+    our.level = level(inside)
+
+    args.boxed = args
+    for (i in seq_along(args.boxed)) {
+        arg = args.boxed[[i]]
+
+        if (is.inside.functor(arg) && level(arg)>=our.level) {
+        }
+        else {
+            args.boxed[[i]] = (function(arg) {
+                force(arg)
+                list(
+                    callback = function() {
+                        arg
+                    }
+                )
+            })(arg)
+        }
+    }
+    max.depth = max(sapply(args.boxed, depth))
+
+    callback = function() {
+        piece.args = lapply(args.boxed, function (arg) {
+            arg$callback()
+        })
+        caller(func, piece.args)
+    }
+
+    make.meval(
+        callback,
+        level = our.level,
+        depth = max.depth
+    )
+}
+@
+
+<p>Which is ugly but works. Then:</p>
+
+<<fig=T>>=
+plot(x, collect.all(each(x,l=2) %+.% meval(runif(1))))
+@
+
+<p>Now the real challenge is to understand why the above code works,
+but interchanging the levels (ie making the each() happen before
+the meval()) does not:</p>
+
+<<fig=T>>=
+plot(x, collect.all(each(x) %+.% meval(runif(1),l=2)))
+@
+
+<p>And, given that you obviously wanted it to go the first way or why
+would you have used meval(), is there any way to modify the semantics
+so that only the first way makes sense (and is that a good idea?),
+which brings us to...</p>
+
+<h3>About those <code>level</code>s...</h3>
+
+<p>They're yucky. Also note that the call to <code>collect.all</code>
+in the preceding example is really doing 2 collects, even though
+the functors are only ever written 1 deep.</p>
+
+<p>The reason is that expressions like<p>
+
+<<>>=
+x = c(1, 2, 3)
+y = c(4, 5)
+collect.all(each(x,l=2) %+.% each(y))
+@ 
+
+<p>behave like (inserting for the xs)</p>
+
+<<keep.source=T>>=
+collect.all(
+    each(x)
+    %+.%
+    each(
+        lapply(x, function(x.) each(y))
+    )
+)
+@
+
+<p>which behaves like (inserting for the ys)</p>
+
+<<keep.source=T>>=
+collect.all(
+    each(
+        lapply(x, function(x.)
+            each(
+                lapply(y, function(y) x.)
+            )
+        )
+    )
+    %+.%
+    each(
+        lapply(x, function(x) each(y))
+    )
+)
+@
+
+<p>ie only when the levels are the same do the eaches "line up" and
+remain a single each. When the levels are different they "miss" each
+other and become two nested eaches. This is by design but it still
+feels messy.</p> 
+
+<p>Suppose we were to bring back the suggestion of the name "corresponding"
+that we mentioned earlier:</p>
+
+<<eval=F>>=
+each(x) %+.% corresponding(y)
+@
+
+<p>would stand for when the levels are identical; in any other case
+the levels would be assumed to be different and the functors would
+"overlap".</p>
+
+<p>The advantage to this notation is that only when the word "each" is
+actually used is another level introduced. Plus it aligns more closely
+with English.</p>
+

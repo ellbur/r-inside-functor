@@ -1,5 +1,8 @@
+#!/usr/bin/Rscript --vanilla
 
 library(R2HTML)
 
-Sweave('why-inside-functors.Rnw', driver=RweaveHTML)
+for (file in commandArgs(trailingOnly=T)) {
+    Sweave(file, driver=RweaveHTML)
+}
 

@@ -105,7 +105,7 @@ depth.inside.functor = function(functor) {
 #' @seealso \code{\link{apply.functor.each}} for an example definition,
 #' and \code{\link{apply.check.functor}} for the function using this
 #' function.
-apply.functor = function(functor, func, args, caller) {
+apply.functor = function(functor, func, args, index, caller) {
 	UseMethod('apply.functor')
 }
 
@@ -122,7 +122,7 @@ collect.inside.functor = function(functor) {
 			collect.end(functor)
 		}
 		else {
-			apply.functor(functor, collect, list(functor), do.call)
+			apply.functor(functor, collect, list(functor), 1, do.call)
 		}
 	}
 }
@@ -165,7 +165,7 @@ apply.check.functor = function(func, args) {
 		return(do.call(func, args))
 	}
 	
-	apply.functor(winner.arg, func, args, apply.check.functor)
+	apply.functor(winner.arg, func, args, winner.i, apply.check.functor)
 }
 
 list.elim.missing = function(env) {

@@ -18,7 +18,7 @@
 #' \code{\link{unpack}}
 #' \code{\link{pack}}
 #' \code{\link{make.axis}}
-each = function(object, level=1, ...) {
+each = function(object, level=2, ...) {
 	make.each(object, level=level, ...)
 }
 
@@ -91,7 +91,7 @@ make.each = function(
 	object,
 	items  = unpack(object, ...),
 	axis   = make.axis(object, ...),
-	level  = 1,
+	level  = 2,
 	depth  = 1,
     ...
 )
@@ -115,18 +115,74 @@ insert.each = function(inside, outside) {
 	)
 }
 
-apply.functor.each = function(inside, func, args, caller) {
+corresponds = function(arg, inside) {
+    UseMethod('corresponds')
+}
+
+corresponds.default = function(arg, inside) {
+    F
+}
+
+alignable = function(arg, inside) {
+    UseMethod('alignable')
+}
+
+corresponding = function(arg, inside, i) {
+    UseMethod('corresponding')
+}
+
+corresponding.each = function(arg, inside, i) {
+    part = arg$items[[i]]
+    arg$items[[i]]
+}
+
+correspondence = function(object, ref, level=1, depth=1) {
+    cor = make.each(
+        object,
+        level  = level,
+        depth  = depth,
+    )
+    cor$ref    = ref
+    
+    class(cor) = c('correspondence', class(cor))
+    cor
+}
+
+pond = function(object, ref=NULL) {
+    correspondence(object, ref)
+}
+
+`%for%` = function(object, ref) {
+    correspondence(object, ref)
+}
+
+corresponds.correspondence = function(arg, inside) {
+    if (is.null(arg$ref)) {
+        T
+    }
+    else {
+        identical(arg$axis, inside$axis)
+    }
+} 
+
+alignable.correspondence = function(arg, inside) {
+    identical(arg$axis, inside$axis)
+}
+
+apply.functor.each = function(inside, func, args, index, caller) {
 	our.level  = level(inside)
 	our.axis   = inside$axis
 	our.object = inside$object
-	
+    
 	args.boxed = args
 	for (i in seq_along(args.boxed)) {
 		arg = args.boxed[[i]]
 		
-		if (is.inside.functor(arg) && level(arg)>=our.level) {
-			axis = arg$axis
-			if (!identical(axis, our.axis)) {
+        if (i == index) {
+            args.boxed[[i]] = arg
+        }
+        else if (corresponds(arg, inside)) {
+			if (!alignable(arg, inside)) {
 				stop('Axis mismatch: ', inside, ' and ', arg)
 			}
 		}
@@ -134,13 +190,13 @@ apply.functor.each = function(inside, func, args, caller) {
 			args.boxed[[i]] = insert.each(inside, arg)
 		}
 	}
-	
+    
 	items = list()
 	max.depth = 0
 	
 	for (i in our.axis) {
 		piece.args = lapply(args.boxed, function (arg) {
-			arg$items[[i]]
+			corresponding(arg, inside, i)
 		})
 		res = caller(func, piece.args)
 		max.depth = max(depth(res), max.depth)

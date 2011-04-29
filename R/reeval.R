@@ -36,6 +36,7 @@ apply.functor.reeval = function(
     inside,
     func,
     args,
+    index,
     caller
 )
 {

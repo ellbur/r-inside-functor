@@ -1,0 +1,196 @@
+
+<<print=F,echo=F>>=
+options(R2HTML.formatter=HTMLFormatHighlight)
+options(keep.source=T)
+@
+
+<<results=html,echo=F>>=
+HTMLGetHighlightCSS()
+@
+
+<style type="text/css">
+.command {
+	font-family: monospace;
+	color: rgb(200,200,200);
+	white-space: pre;
+}
+p.commandline {
+	margin-top: 0px;
+	margin-bottom: 0px;
+}
+.functioncall {
+	color: rgb(20,100,100);
+}
+.hr {
+	visibility: hidden;
+}
+.note {
+    color: rgb(150,150,150);
+}
+</style>
+
+<p class="note">(The examples here work with the version of <a
+href="https://github.com/ellbur/r-inside-functor">insidefunctor</a> tagged as
+"v2")</p>
+
+<p>Unfortunately I couldn't do this cleanly outside the library. So the changes
+are made in <code>insidefunctor</code>.</p>
+
+<p>Levels are no longer used to "line up" <code>each</code>es. So, for
+example,</p>
+
+<<keep.source=T>>=
+library(insidefunctor)
+
+`%+.%` = fmap(`+`)
+`%/.%` = fmap(`/`)
+
+x = c(1, 2, 3)
+y = c(4, 5, 6)
+
+.[z] = each(x) %+.% each(y)
+z
+
+.[w] = each(x) %+.% pond(y)
+w
+@
+
+<p>where "pond" stands for "corresponding" and is chosen because no one would
+use the word pond for anything else.</p>
+
+<p>But this is so much more flexible! Because the definition of "corresponding"
+is itself flexible. Here it means "having the same sequential position", but it
+could be taken to mean just about anything else. Like, for example, a
+linearly-interpolated lookup-table:</p>
+
+<<>>=
+`%near%` = function(y, x) {
+    UseMethod('%near%')
+}
+
+looktable = function(dep, ind) {
+    reorder = order(ind)
+    dep = dep[reorder]
+    ind = ind[reorder]
+    
+    attr(dep, 'indvar') = ind
+    class(dep) = c('looktable', class(dep))
+    
+    dep
+}
+
+`%near%.looktable` = function(y, x) {
+    pond(approx(attr(y, 'indvar'), y, x)$y)
+}
+@
+
+<p>All it does is translate linear nearness into sequential correspondence, ie
+exactly what approx() does in the first place. Then you can use it like</p>
+
+<<>>=
+.[u] = each(1:5) %+.% reeval(runif(1))
+u
+v = looktable(
+    (0:6)**2,
+    0:6
+)
+v
+
+.[w] = v %near% u
+w
+
+.[z] = (v %near% u) %/.% each(u)
+z
+@
+
+<p>These could of course have been done just as easily in straight-up R. The only
+difference is grammar. You can generalize corresponding to other kindns of lookups,
+like, say, functions:</p>
+
+<p>This is a little trickier because if you were to say</p>
+
+<<eval=F>>=
+each(u) %/.% the(sin)
+@
+
+<p>when <code>the(sin)</code> is called it has no idea what axis it runs along, ie
+it <em>can't</em> sequentially correspond at that time. Luckily the definition of
+correspondence is flexibly: it is done through several generic functions:</p>
+
+<<eval=F>>=
+corresponds = function(arg, inside) {
+    UseMethod('corresponds')
+}
+alignable = function(arg, inside) {
+    UseMethod('alignable')
+}
+corresponding = function(arg, inside, i) {
+    UseMethod('corresponding')
+}
+@
+
+<p>With defaults suitable for sequential correspondence:</p>
+
+<<eval=F>>=
+corresponds.correspondence = function(arg, inside) {
+    if (is.null(arg$ref)) {
+        T
+    }
+    else {
+        identical(arg$axis, inside$axis)
+    }
+} 
+alignable.correspondence = function(arg, inside) {
+    identical(arg$axis, inside$axis)
+}
+corresponding.each = function(arg, inside, i) {
+    part = arg$items[[i]]
+    arg$items[[i]]
+}
+@
+
+<p>So all we need to do is provide methods to tell
+<code>apply.functor.each</code> that <code>the(sin)</code> corresponds to
+<code>each(u)</code>, that they are alignable, and, given an element of
+<code>u</code>, to find the corresponding element in <code>the(sin)</code>.</p>
+
+<<keep.source=T>>=
+the = function(func) {
+	the = list(
+		func = func
+	)
+	class(the) = c('the', class(the))
+	the
+}
+
+corresponds.the = function(the, inside) {
+	T
+}
+
+alignable.the = function(the, inside) {
+	T  
+}
+
+corresponding.the = function(the, inside, i) {
+	the$func(inside$items[[i]])
+}
+@
+
+<p>Now see if that works:</p>
+
+<<>>=
+u = c(1, 2, 3)
+u
+.[v] = each(u) %/.% the(sin) 
+v
+@
+
+<p>Alas we still could not do</p>
+
+<<eval=F>>=
+plot(each(seq(0, 1, len=100)), the(sin))
+@
+
+<p>because the elements would not be collected at the time of calling plot().
+Perhaps another functor could fix this.</p>
+
